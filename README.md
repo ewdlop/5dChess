@@ -7,3 +7,6 @@ vs
 Non-Euclidean 5d Chess 
 
 - ++++
+
+
+# SpaceTime =!= Space + Time =!= Space-time
