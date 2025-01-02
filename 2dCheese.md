@@ -7,3 +7,4 @@
 7. ciruclur chessboard - 2-sphere
 8. sphereical chess-board texutre on 3-sphere
 9. this what happen when you learn math like me. This one can possibly be chess on L systems.
+10. wichever side have more cheese hole wins.
