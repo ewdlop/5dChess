@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Torus Chess</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
+        }
+        .game-container {
+            text-align: center;
+        }
+        canvas {
+            border: 2px solid #333;
+            background: white;
+        }
+        #status {
+            margin-top: 20px;
+            font-size: 24px;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <canvas id="chessboard" width="400" height="400"></canvas>
+        <div id="status">Current Player: White</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('chessboard');
+        const ctx = canvas.getContext('2d');
+        const statusDiv = document.getElementById('status');
+        const SQUARE_SIZE = 50;
+        const BOARD_SIZE = 8;
+
+        let board = Array(8).fill().map(() => Array(8).fill(null));
+        let selectedPiece = null;
+        let validMoves = [];
+        let currentPlayer = 'white';
+
+        // Initialize the board
+        function initializeBoard() {
+            const backRow = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook'];
+            
+            // Place pawns
+            for (let i = 0; i < 8; i++) {
+                board[1][i] = { type: 'pawn', color: 'black' };
+                board[6][i] = { type: 'pawn', color: 'white' };
+            }
+
+            // Place other pieces
+            for (let i = 0; i < 8; i++) {
+                board[0][i] = { type: backRow[i], color: 'black' };
+                board[7][i] = { type: backRow[i], color: 'white' };
+            }
+        }
+
+        // Convert normal coordinates to torus coordinates
+        function torusCoord(coord) {
+            return ((coord % 8) + 8) % 8;
+        }
+
+        function isValidMove(fromRow, fromCol, toRow, toCol) {
+            const piece = board[fromRow][fromCol];
+            if (!piece || piece.color !== currentPlayer) return false;
+
+            toRow = torusCoord(toRow);
+            toCol = torusCoord(toCol);
+
+            if (board[toRow][toCol]?.color === currentPlayer) return false;
+
+            const rowDiff = Math.min(
+                Math.abs(toRow - fromRow),
+                Math.abs(toRow - fromRow + 8),
+                Math.abs(toRow - fromRow - 8)
+            );
+            
+            const colDiff = Math.min(
+                Math.abs(toCol - fromCol),
+                Math.abs(toCol - fromCol + 8),
+                Math.abs(toCol - fromCol - 8)
+            );
+
+            switch (piece.type) {
+                case 'pawn':
+                    const direction = piece.color === 'white' ? -1 : 1;
+                    const startRow = piece.color === 'white' ? 6 : 1;
+                    
+                    if (colDiff === 0 && torusCoord(fromRow + direction) === toRow && !board[toRow][toCol]) {
+                        return true;
+                    }
+                    if (colDiff === 0 && fromRow === startRow && 
+                        torusCoord(fromRow + 2 * direction) === toRow && 
+                        !board[toRow][toCol] && 
+                        !board[torusCoord(fromRow + direction)][fromCol]) {
+                        return true;
+                    }
+                    if (colDiff === 1 && torusCoord(fromRow + direction) === toRow && board[toRow][toCol]) {
+                        return true;
+                    }
+                    return false;
+
+                case 'knight':
+                    return (rowDiff === 2 && colDiff === 1) || (rowDiff === 1 && colDiff === 2);
+
+                case 'bishop':
+                    return rowDiff === colDiff;
+
+                case 'rook':
+                    return rowDiff === 0 || colDiff === 0;
+
+                case 'queen':
+                    return rowDiff === colDiff || rowDiff === 0 || colDiff === 0;
+
+                case 'king':
+                    return rowDiff <= 1 && colDiff <= 1;
+
+                default:
+                    return false;
+            }
+        }
+
+        function calculateValidMoves(row, col) {
+            const moves = [];
+            for (let i = -7; i <= 7; i++) {
+                for (let j = -7; j <= 7; j++) {
+                    if (isValidMove(row, col, row + i, col + j)) {
+                        moves.push([torusCoord(row + i), torusCoord(col + j)]);
+                    }
+                }
+            }
+            return moves;
+        }
+
+        function drawBoard() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw squares
+            for (let row = 0; row < BOARD_SIZE; row++) {
+                for (let col = 0; col < BOARD_SIZE; col++) {
+                    const x = col * SQUARE_SIZE;
+                    const y = row * SQUARE_SIZE;
+                    
+                    // Set square color
+                    ctx.fillStyle = (row + col) % 2 === 0 ? '#FFE4B5' : '#8B4513';
+                    ctx.fillRect(x, y, SQUARE_SIZE, SQUARE_SIZE);
+
+                    // Highlight valid moves
+                    if (validMoves.some(([r, c]) => r === row && c === col)) {
+                        if (board[row][col]) {
+                            ctx.strokeStyle = '#FF0000';
+                            ctx.lineWidth = 3;
+                            ctx.strokeRect(x + 2, y + 2, SQUARE_SIZE - 4, SQUARE_SIZE - 4);
+                        } else {
+                            ctx.fillStyle = 'rgba(0, 255, 0, 0.3)';
+                            ctx.beginPath();
+                            ctx.arc(x + SQUARE_SIZE/2, y + SQUARE_SIZE/2, 8, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                    }
+
+                    // Highlight selected piece
+                    if (selectedPiece && selectedPiece.row === row && selectedPiece.col === col) {
+                        ctx.strokeStyle = '#0000FF';
+                        ctx.lineWidth = 3;
+                        ctx.strokeRect(x + 2, y + 2, SQUARE_SIZE - 4, SQUARE_SIZE - 4);
+                    }
+
+                    // Draw pieces
+                    const piece = board[row][col];
+                    if (piece) {
+                        ctx.font = '40px Arial';
+                        ctx.fillStyle = piece.color;
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        
+                        let symbol;
+                        switch (piece.type) {
+                            case 'king': symbol = '♔'; break;
+                            case 'queen': symbol = '♕'; break;
+                            case 'rook': symbol = '♖'; break;
+                            case 'bishop': symbol = '♗'; break;
+                            case 'knight': symbol = '♘'; break;
+                            case 'pawn': symbol = '♙'; break;
+                        }
+                        
+                        ctx.fillText(symbol, x + SQUARE_SIZE/2, y + SQUARE_SIZE/2);
+                    }
+                }
+            }
+        }
+
+        canvas.addEventListener('click', (event) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+            
+            const col = Math.floor(x / SQUARE_SIZE);
+            const row = Math.floor(y / SQUARE_SIZE);
+
+            if (selectedPiece) {
+                if (validMoves.some(([r, c]) => r === row && c === col)) {
+                    // Make the move
+                    board[row][col] = board[selectedPiece.row][selectedPiece.col];
+                    board[selectedPiece.row][selectedPiece.col] = null;
+                    
+                    // Switch player
+                    currentPlayer = currentPlayer === 'white' ? 'black' : 'white';
+                    statusDiv.textContent = `Current Player: ${currentPlayer.charAt(0).toUpperCase() + currentPlayer.slice(1)}`;
+                }
+                
+                selectedPiece = null;
+                validMoves = [];
+            } else if (board[row][col]?.color === currentPlayer) {
+                selectedPiece = { row, col };
+                validMoves = calculateValidMoves(row, col);
+            }
+
+            drawBoard();
+        });
+
+        // Initialize and start the game
+        initializeBoard();
+        drawBoard();
+    </script>
+</body>
+</html>
