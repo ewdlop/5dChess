@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Klein Bottle Chess</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
+        }
+        .game-container {
+            text-align: center;
+        }
+        #chessboard {
+            display: inline-grid;
+            grid-template-columns: repeat(8, 50px);
+            gap: 0;
+            border: 2px solid #333;
+            background: white;
+            position: relative;
+            margin: 30px;
+        }
+        .edge-indicator {
+            position: absolute;
+            font-size: 12px;
+            color: #666;
+            pointer-events: none;
+        }
+        .edge-top { top: -25px; width: 100%; text-align: center; }
+        .edge-bottom { bottom: -25px; width: 100%; text-align: center; }
+        .edge-left { left: -25px; height: 100%; writing-mode: vertical-rl; text-orientation: mixed; }
+        .edge-right { right: -25px; height: 100%; writing-mode: vertical-rl; text-orientation: mixed; }
+        .square {
+            width: 50px;
+            height: 50px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 35px;
+            position: relative;
+            cursor: pointer;
+        }
+        .light { background-color: #FFE4B5; }
+        .dark { background-color: #8B4513; }
+        .selected { box-shadow: inset 0 0 0 3px #0000FF; }
+        .valid-move::after {
+            content: '';
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            background-color: rgba(0, 255, 0, 0.3);
+            border-radius: 50%;
+        }
+        .valid-move.flip::after {
+            background-color: rgba(255, 165, 0, 0.5);
+        }
+        .valid-capture { box-shadow: inset 0 0 0 3px #FF0000; }
+        .valid-capture.flip { box-shadow: inset 0 0 0 3px #FFA500; }
+        .piece {
+            cursor: pointer;
+            user-select: none;
+        }
+        .piece.white {
+            color: white;
+            text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+        }
+        .piece.black { color: black; }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <div id="chessboard">
+            <div class="edge-indicator edge-top">Color flips when crossing vertically ↕</div>
+            <div class="edge-indicator edge-bottom">Color flips when crossing vertically ↕</div>
+            <div class="edge-indicator edge-left">Color preserves when crossing horizontally →</div>
+            <div class="edge-indicator edge-right">Color preserves when crossing horizontally ←</div>
+        </div>
+        <div id="status">Current Player: White</div>
+    </div>
+
+    <script>
+    $(document).ready(function() {
+        const BOARD_SIZE = 8;
+        let board = Array(BOARD_SIZE).fill().map(() => Array(BOARD_SIZE).fill(null));
+        let currentPlayer = 'white';
+        let selectedSquare = null;
+        
+        const pieces = {
+            'white': {
+                'king': '♔', 'queen': '♕', 'rook': '♖',
+                'bishop': '♗', 'knight': '♘', 'pawn': '♙'
+            },
+            'black': {
+                'king': '♚', 'queen': '♛', 'rook': '♜',
+                'bishop': '♝', 'knight': '♞', 'pawn': '♟'
+            }
+        };
+
+        function mod(n, m) {
+            return ((n % m) + m) % m;
+        }
+
+        function calculatePath(fromRow, fromCol, toRow, toCol) {
+            let paths = [];
+            
+            // Calculate horizontal wrapping possibilities
+            let colPaths = [];
+            colPaths.push({ dCol: toCol - fromCol, crossesHorizontal: false });
+            colPaths.push({ dCol: toCol - fromCol + 8, crossesHorizontal: true });
+            colPaths.push({ dCol: toCol - fromCol - 8, crossesHorizontal: true });
+            
+            // Calculate vertical wrapping possibilities
+            let rowPaths = [];
+            rowPaths.push({ dRow: toRow - fromRow, crossesVertical: false });
+            rowPaths.push({ dRow: toRow - fromRow + 8, crossesVertical: true });
+            rowPaths.push({ dRow: toRow - fromRow - 8, crossesVertical: true });
+            
+            // Combine all possible paths
+            for (let rPath of rowPaths) {
+                for (let cPath of colPaths) {
+                    paths.push({
+                        dRow: rPath.dRow,
+                        dCol: cPath.dCol,
+                        crossesVertical: rPath.crossesVertical,
+                        distance: Math.abs(rPath.dRow) + Math.abs(cPath.dCol)
+                    });
+                }
+            }
+
+            // Sort paths by distance
+            paths.sort((a, b) => a.distance - b.distance);
+            
+            // Get the shortest path
+            let shortestPath = paths[0];
+
+            // Check if the path crosses the vertical boundary
+            const shouldFlip = shortestPath.crossesVertical || 
+                             Math.abs(shortestPath.dRow) > 4;
+
+            return {
+                dRow: shortestPath.dRow,
+                dCol: shortestPath.dCol,
+                flip: shouldFlip,
+                distance: shortestPath.distance
+            };
+        }
+
+        function isPathClear(fromRow, fromCol, toRow, toCol) {
+            const path = calculatePath(fromRow, fromCol, toRow, toCol);
+            if (path.distance <= 1) return true;
+
+            const steps = Math.max(Math.abs(path.dRow), Math.abs(path.dCol));
+            const stepRow = path.dRow / steps;
+            const stepCol = path.dCol / steps;
+
+            for (let i = 1; i < steps; i++) {
+                const checkRow = mod(Math.round(fromRow + stepRow * i), 8);
+                const checkCol = mod(Math.round(fromCol + stepCol * i), 8);
+                if (board[checkRow][checkCol]) return false;
+            }
+
+            return true;
+        }
+
+        function isValidMove(fromRow, fromCol, toRow, toCol) {
+            const piece = board[fromRow][fromCol];
+            if (!piece || piece.color !== currentPlayer) return false;
+
+            const path = calculatePath(fromRow, fromCol, toRow, toCol);
+            const targetRow = mod(toRow, 8);
+            const targetCol = mod(toCol, 8);
+
+            if (board[targetRow][targetCol]?.color === currentPlayer) return false;
+
+            const absRow = Math.abs(path.dRow);
+            const absCol = Math.abs(path.dCol);
+
+            let validMove = false;
+            switch (piece.type) {
+                case 'pawn': {
+                    const direction = piece.color === 'white' ? -1 : 1;
+                    const startRow = piece.color === 'white' ? 6 : 1;
+
+                    if (path.dCol === 0 && path.dRow === direction && !board[targetRow][targetCol]) {
+                        validMove = true;
+                    } else if (path.dCol === 0 && fromRow === startRow && path.dRow === 2 * direction &&
+                            !board[targetRow][targetCol] && 
+                            !board[mod(fromRow + direction, 8)][fromCol]) {
+                        validMove = true;
+                    } else if (Math.abs(path.dCol) === 1 && path.dRow === direction && board[targetRow][targetCol]) {
+                        validMove = true;
+                    }
+                    break;
+                }
+                case 'knight':
+                    return (absRow === 2 && absCol === 1) || (absRow === 1 && absCol === 2);
+                case 'bishop':
+                    validMove = absRow === absCol && isPathClear(fromRow, fromCol, toRow, toCol);
+                    break;
+                case 'rook':
+                    validMove = (absRow === 0 || absCol === 0) && isPathClear(fromRow, fromCol, toRow, toCol);
+                    break;
+                case 'queen':
+                    validMove = (absRow === 0 || absCol === 0 || absRow === absCol) && 
+                               isPathClear(fromRow, fromCol, toRow, toCol);
+                    break;
+                case 'king':
+                    validMove = absRow <= 1 && absCol <= 1;
+                    break;
+            }
+
+            return validMove;
+        }
+
+        function getValidMoves(row, col) {
+            const moves = [];
+            for (let dRow = -7; dRow <= 7; dRow++) {
+                for (let dCol = -7; dCol <= 7; dCol++) {
+                    if (isValidMove(row, col, row + dRow, col + dCol)) {
+                        const targetRow = mod(row + dRow, 8);
+                        const targetCol = mod(col + dCol, 8);
+                        const path = calculatePath(row, col, targetRow, targetCol);
+                        moves.push([targetRow, targetCol, path.flip]);
+                    }
+                }
+            }
+            return moves;
+        }
+
+        function showValidMoves(moves) {
+            moves.forEach(([row, col, flips]) => {
+                const square = getSquare(row, col);
+                if (board[row][col]) {
+                    square.addClass('valid-capture');
+                    if (flips) square.addClass('flip');
+                } else {
+                    square.addClass('valid-move');
+                    if (flips) square.addClass('flip');
+                }
+            });
+        }
+
+        function initializeBoard() {
+            const backRow = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook'];
+            
+            for (let row = 0; row < BOARD_SIZE; row++) {
+                for (let col = 0; col < BOARD_SIZE; col++) {
+                    const square = $('<div>')
+                        .addClass('square')
+                        .addClass((row + col) % 2 === 0 ? 'light' : 'dark')
+                        .attr('data-row', row)
+                        .attr('data-col', col);
+                    
+                    $('#chessboard').append(square);
+                }
+            }
+
+            for (let col = 0; col < BOARD_SIZE; col++) {
+                placePiece(0, col, 'black', backRow[col]);
+                placePiece(1, col, 'black', 'pawn');
+                placePiece(6, col, 'white', 'pawn');
+                placePiece(7, col, 'white', backRow[col]);
+            }
+        }
+
+        function placePiece(row, col, color, type) {
+            board[row][col] = { color, type };
+            updateSquare(row, col);
+        }
+
+        function updateSquare(row, col) {
+            const piece = board[row][col];
+            const square = getSquare(row, col);
+            square.empty();
+            
+            if (piece) {
+                $('<div>')
+                    .addClass('piece')
+                    .addClass(piece.color)
+                    .text(pieces[piece.color][piece.type])
+                    .appendTo(square);
+            }
+        }
+
+        function getSquare(row, col) {
+            return $(`.square[data-row="${row}"][data-col="${col}"]`);
+        }
+
+        function handleSquareClick() {
+            const row = parseInt($(this).attr('data-row'));
+            const col = parseInt($(this).attr('data-col'));
+
+            if (selectedSquare) {
+                const [fromRow, fromCol] = selectedSquare;
+                
+                if (isValidMove(fromRow, fromCol, row, col)) {
+                    const path = calculatePath(fromRow, fromCol, row, col);
+                    const targetRow = mod(row, 8);
+                    const targetCol = mod(col, 8);
+
+                    const movingPiece = board[fromRow][fromCol];
+                    board[fromRow][fromCol] = null;
+
+                    if (path.flip) {
+                        movingPiece.color = movingPiece.color === 'white' ? 'black' : 'white';
+                    }
+
+                    board[targetRow][targetCol] = movingPiece;
+                    
+                    updateSquare(fromRow, fromCol);
+                    updateSquare(targetRow, targetCol);
+                    
+                    currentPlayer = currentPlayer === 'white' ? 'black' : 'white';
+                    $('#status').text(`Current Player: ${currentPlayer.charAt(0).toUpperCase() + currentPlayer.slice(1)}`);
+                }
+                
+                selectedSquare = null;
+                $('.square').removeClass('selected valid-move valid-capture flip');
+            } else if (board[row][col]?.color === currentPlayer) {
+                selectedSquare = [row, col];
+                $('.square').removeClass('selected valid-move valid-capture flip');
+                $(this).addClass('selected');
+                showValidMoves(getValidMoves(row, col));
+            }
+        }
+
+        initializeBoard();
+        $('.square').on('click', handleSquareClick);
+    });
+    </script>
+</body>
+</html>
