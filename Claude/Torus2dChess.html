@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html>
+<!-- Previous head and style sections remain the same -->
+<head>
+    <title>Torus Chess - jQuery Version</title>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+    <style>
+        /* Previous CSS remains the same */
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
+        }
+        .game-container {
+            text-align: center;
+        }
+        #chessboard {
+            display: inline-grid;
+            grid-template-columns: repeat(8, 50px);
+            gap: 0;
+            border: 2px solid #333;
+            background: white;
+        }
+        .square {
+            width: 50px;
+            height: 50px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 35px;
+            position: relative;
+            cursor: pointer;
+        }
+        .light { background-color: #FFE4B5; }
+        .dark { background-color: #8B4513; }
+        .selected { box-shadow: inset 0 0 0 3px #0000FF; }
+        .valid-move::after {
+            content: '';
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            background-color: rgba(0, 255, 0, 0.3);
+            border-radius: 50%;
+        }
+        .valid-capture { box-shadow: inset 0 0 0 3px #FF0000; }
+        #status {
+            margin-top: 20px;
+            font-size: 24px;
+            color: #333;
+        }
+        .piece {
+            cursor: pointer;
+            user-select: none;
+        }
+        .piece.white {
+            color: white;
+            text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+        }
+        .piece.black { color: black; }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <div id="chessboard"></div>
+        <div id="status">Current Player: White</div>
+    </div>
+
+    <script>
+        $(document).ready(function() {
+            const BOARD_SIZE = 8;
+            let board = Array(BOARD_SIZE).fill().map(() => Array(BOARD_SIZE).fill(null));
+            let currentPlayer = 'white';
+            let selectedSquare = null;
+            
+            const pieces = {
+                'white': {
+                    'king': '♔', 'queen': '♕', 'rook': '♖',
+                    'bishop': '♗', 'knight': '♘', 'pawn': '♙'
+                },
+                'black': {
+                    'king': '♚', 'queen': '♛', 'rook': '♜',
+                    'bishop': '♝', 'knight': '♞', 'pawn': '♟'
+                }
+            };
+
+            function torusCoord(coord) {
+                return ((coord % 8) + 8) % 8;
+            }
+
+            // New function to get shortest torus path
+            function getTorusPath(fromRow, fromCol, toRow, toCol) {
+                // Calculate all possible paths on torus
+                let rowPaths = [
+                    [toRow - fromRow, 1], // direct
+                    [toRow - fromRow + 8, 1], // wrap positive
+                    [toRow - fromRow - 8, 1]  // wrap negative
+                ];
+                
+                let colPaths = [
+                    [toCol - fromCol, 1], // direct
+                    [toCol - fromCol + 8, 1], // wrap positive
+                    [toCol - fromCol - 8, 1]  // wrap negative
+                ];
+
+                // Find shortest row path
+                rowPaths.sort((a, b) => Math.abs(a[0]) - Math.abs(b[0]));
+                const rowDiff = rowPaths[0][0];
+
+                // Find shortest column path
+                colPaths.sort((a, b) => Math.abs(a[0]) - Math.abs(b[0]));
+                const colDiff = colPaths[0][0];
+
+                return [rowDiff, colDiff];
+            }
+
+            // Modified path checking function
+            function isPathClear(fromRow, fromCol, toRow, toCol) {
+                const piece = board[fromRow][fromCol];
+                if (piece.type === 'knight') return true;
+
+                const [rowDiff, colDiff] = getTorusPath(fromRow, fromCol, toRow, toCol);
+                const steps = Math.max(Math.abs(rowDiff), Math.abs(colDiff));
+                
+                if (steps === 0) return true;
+
+                const rowStep = rowDiff / steps;
+                const colStep = colDiff / steps;
+
+                // Check each square along the path except start and end
+                for (let i = 1; i < steps; i++) {
+                    const checkRow = torusCoord(Math.round(fromRow + i * rowStep));
+                    const checkCol = torusCoord(Math.round(fromCol + i * colStep));
+                    
+                    if (board[checkRow][checkCol]) return false;
+                }
+
+                return true;
+            }
+
+            function isValidMove(fromRow, fromCol, toRow, toCol) {
+                const piece = board[fromRow][fromCol];
+                if (!piece || piece.color !== currentPlayer) return false;
+
+                toRow = torusCoord(toRow);
+                toCol = torusCoord(toCol);
+
+                if (board[toRow][toCol]?.color === currentPlayer) return false;
+
+                const [rowDiff, colDiff] = getTorusPath(fromRow, fromCol, toRow, toCol);
+                const absRowDiff = Math.abs(rowDiff);
+                const absColDiff = Math.abs(colDiff);
+
+                let validMove = false;
+
+                switch (piece.type) {
+                    case 'pawn':
+                        const direction = piece.color === 'white' ? -1 : 1;
+                        const startRow = piece.color === 'white' ? 6 : 1;
+                        
+                        if (colDiff === 0 && rowDiff === direction && !board[toRow][toCol]) {
+                            validMove = true;
+                        } else if (colDiff === 0 && fromRow === startRow && 
+                            rowDiff === 2 * direction && 
+                            !board[toRow][toCol] && 
+                            !board[torusCoord(fromRow + direction)][fromCol]) {
+                            validMove = true;
+                        } else if (Math.abs(colDiff) === 1 && rowDiff === direction && board[toRow][toCol]) {
+                            validMove = true;
+                        }
+                        break;
+
+                    case 'knight':
+                        validMove = (absRowDiff === 2 && absColDiff === 1) || 
+                                  (absRowDiff === 1 && absColDiff === 2);
+                        break;
+
+                    case 'bishop':
+                        validMove = absRowDiff === absColDiff;
+                        break;
+
+                    case 'rook':
+                        validMove = absRowDiff === 0 || absColDiff === 0;
+                        break;
+
+                    case 'queen':
+                        validMove = absRowDiff === absColDiff || 
+                                  absRowDiff === 0 || 
+                                  absColDiff === 0;
+                        break;
+
+                    case 'king':
+                        validMove = absRowDiff <= 1 && absColDiff <= 1;
+                        break;
+                }
+
+                return validMove && isPathClear(fromRow, fromCol, toRow, toCol);
+            }
+
+            // Rest of the code remains the same (calculateValidMoves, initializeBoard, etc.)
+            function calculateValidMoves(row, col) {
+                const moves = [];
+                for (let i = -7; i <= 7; i++) {
+                    for (let j = -7; j <= 7; j++) {
+                        if (isValidMove(row, col, row + i, col + j)) {
+                            moves.push([torusCoord(row + i), torusCoord(col + j)]);
+                        }
+                    }
+                }
+                return moves;
+            }
+
+            function initializeBoard() {
+                const backRow = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook'];
+                
+                // Create board squares
+                for (let row = 0; row < BOARD_SIZE; row++) {
+                    for (let col = 0; col < BOARD_SIZE; col++) {
+                        const square = $('<div>')
+                            .addClass('square')
+                            .addClass((row + col) % 2 === 0 ? 'light' : 'dark')
+                            .attr('data-row', row)
+                            .attr('data-col', col);
+                        
+                        $('#chessboard').append(square);
+                    }
+                }
+
+                // Place pieces
+                for (let col = 0; col < BOARD_SIZE; col++) {
+                    placePiece(0, col, 'black', backRow[col]);
+                    placePiece(1, col, 'black', 'pawn');
+                    placePiece(6, col, 'white', 'pawn');
+                    placePiece(7, col, 'white', backRow[col]);
+                }
+            }
+
+            function placePiece(row, col, color, type) {
+                board[row][col] = { color, type };
+                updateSquare(row, col);
+            }
+
+            function updateSquare(row, col) {
+                const piece = board[row][col];
+                const square = getSquare(row, col);
+                square.empty();
+                
+                if (piece) {
+                    $('<div>')
+                        .addClass('piece')
+                        .addClass(piece.color)
+                        .text(pieces[piece.color][piece.type])
+                        .appendTo(square);
+                }
+            }
+
+            function getSquare(row, col) {
+                return $(`.square[data-row="${row}"][data-col="${col}"]`);
+            }
+
+            function showValidMoves(moves) {
+                moves.forEach(([row, col]) => {
+                    const square = getSquare(row, col);
+                    if (board[row][col]) {
+                        square.addClass('valid-capture');
+                    } else {
+                        square.addClass('valid-move');
+                    }
+                });
+            }
+
+            function clearHighlights() {
+                $('.square').removeClass('selected valid-move valid-capture');
+            }
+
+            function handleSquareClick() {
+                const row = parseInt($(this).attr('data-row'));
+                const col = parseInt($(this).attr('data-col'));
+
+                if (selectedSquare) {
+                    const [fromRow, fromCol] = selectedSquare;
+                    
+                    if (isValidMove(fromRow, fromCol, row, col)) {
+                        // Make the move
+                        board[row][col] = board[fromRow][fromCol];
+                        board[fromRow][fromCol] = null;
+                        
+                        updateSquare(fromRow, fromCol);
+                        updateSquare(row, col);
+                        
+                        // Switch player
+                        currentPlayer = currentPlayer === 'white' ? 'black' : 'white';
+                        $('#status').text(`Current Player: ${currentPlayer.charAt(0).toUpperCase() + currentPlayer.slice(1)}`);
+                    }
+                    
+                    selectedSquare = null;
+                    clearHighlights();
+                } else if (board[row][col]?.color === currentPlayer) {
+                    selectedSquare = [row, col];
+                    clearHighlights();
+                    $(this).addClass('selected');
+                    showValidMoves(calculateValidMoves(row, col));
+                }
+            }
+
+            // Initialize the game
+            initializeBoard();
+
+            // Event handlers
+            $('.square').on('click', handleSquareClick);
+        });
+    </script>
+</body>
+</html>
