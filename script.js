@@ -34,11 +34,19 @@ let gameState = {
 const MODE_DESCRIPTIONS = {
     standard: '標準國際象棋規則，棋盤有邊界。',
     torus: '環面模式：棋盤左右邊界相連，上下邊界相連。棋子可以從一邊穿越到另一邊。',
-    klein: '克萊因瓶模式：類似環面，但水平穿越時棋子顏色會翻轉（白變黑、黑變白）！'
+    klein: '克萊因瓶模式：類似環面，但水平穿越時棋子顏色會翻轉（白變黑、黑變白）！',
+    hexagonal: '六角形模式：非歐幾里得幾何棋盤，每行格子數不同，棋子移動規則重新定義。'
 };
+
+// 六角形棋盤的行大小
+const HEX_ROWS = [6, 7, 8, 9, 10, 10, 9, 8, 7, 6];
 
 // 初始化棋盤
 function initBoard() {
+    if (gameState.gameMode === 'hexagonal') {
+        return initHexagonalBoard();
+    }
+    
     const board = Array(8).fill(null).map(() => Array(8).fill(null));
     
     // 黑方棋子（第0-1行）
@@ -70,10 +78,55 @@ function initBoard() {
     return board;
 }
 
+// 初始化六角形棋盤
+function initHexagonalBoard() {
+    const board = [];
+    
+    // 創建10行，每行大小不同
+    for (let row = 0; row < 10; row++) {
+        board[row] = Array(HEX_ROWS[row]).fill(null);
+    }
+    
+    // 黑方棋子（第9-10行）
+    // 第10行：城堡、騎士、主教、皇后、國王、主教、騎士、城堡
+    board[9] = [
+        { type: 'rook', color: 'black' },
+        { type: 'knight', color: 'black' },
+        { type: 'bishop', color: 'black' },
+        { type: 'queen', color: 'black' },
+        { type: 'king', color: 'black' },
+        { type: 'bishop', color: 'black' }
+    ];
+    
+    // 第9行：7個兵
+    board[8] = Array(7).fill(null).map(() => ({ type: 'pawn', color: 'black' }));
+    
+    // 白方棋子（第1-2行）
+    // 第1行：城堡、騎士、主教、皇后、國王、主教、騎士、城堡
+    board[0] = [
+        { type: 'rook', color: 'white' },
+        { type: 'knight', color: 'white' },
+        { type: 'bishop', color: 'white' },
+        { type: 'queen', color: 'white' },
+        { type: 'king', color: 'white' },
+        { type: 'bishop', color: 'white' }
+    ];
+    
+    // 第2行：7個兵
+    board[1] = Array(7).fill(null).map(() => ({ type: 'pawn', color: 'white' }));
+    
+    return board;
+}
+
 // 渲染棋盤
 function renderBoard() {
     const chessboard = document.getElementById('chessboard');
     chessboard.innerHTML = '';
+    
+    if (gameState.gameMode === 'hexagonal') {
+        renderHexagonalBoard();
+        return;
+    }
     
     for (let row = 0; row < 8; row++) {
         for (let col = 0; col < 8; col++) {
@@ -123,6 +176,74 @@ function renderBoard() {
             square.addEventListener('click', () => handleSquareClick(row, col));
             chessboard.appendChild(square);
         }
+    }
+    
+    // 更新玩家回合顯示
+    document.getElementById('current-player').textContent = 
+        gameState.currentPlayer === 'white' ? '白方' : '黑方';
+    
+    // 更新被吃棋子
+    renderCapturedPieces();
+}
+
+// 渲染六角形棋盤
+function renderHexagonalBoard() {
+    const chessboard = document.getElementById('chessboard');
+    chessboard.classList.add('hexagonal');
+    
+    for (let row = 0; row < 10; row++) {
+        const hexRow = document.createElement('div');
+        hexRow.classList.add('hex-row');
+        
+        for (let col = 0; col < HEX_ROWS[row]; col++) {
+            const square = document.createElement('div');
+            square.classList.add('square', 'hexagonal');
+            square.classList.add((row + col) % 2 === 0 ? 'light' : 'dark');
+            square.dataset.row = row;
+            square.dataset.col = col;
+            
+            const piece = gameState.board[row][col];
+            if (piece) {
+                const pieceSpan = document.createElement('span');
+                pieceSpan.classList.add('piece');
+                pieceSpan.textContent = PIECES[piece.color][piece.type];
+                square.appendChild(pieceSpan);
+                square.classList.add('has-piece');
+                
+                // 高亮顯示當前玩家可以移動的棋子
+                if (piece.color === gameState.currentPlayer && !gameState.isGameOver) {
+                    const validMovesForPiece = getValidMoves(row, col);
+                    if (validMovesForPiece.length > 0) {
+                        square.classList.add('can-move');
+                    }
+                }
+            }
+            
+            // 標記選中的方塊
+            if (gameState.selectedSquare && 
+                gameState.selectedSquare.row === row && 
+                gameState.selectedSquare.col === col) {
+                square.classList.add('selected');
+            }
+            
+            // 標記有效移動
+            if (gameState.validMoves.some(move => move.row === row && move.col === col)) {
+                square.classList.add('valid-move');
+                if (piece) {
+                    square.classList.add('has-piece');
+                }
+            }
+            
+            // 檢查將軍
+            if (piece && piece.type === 'king' && isInCheck(piece.color)) {
+                square.classList.add('in-check');
+            }
+            
+            square.addEventListener('click', () => handleSquareClick(row, col));
+            hexRow.appendChild(square);
+        }
+        
+        chessboard.appendChild(hexRow);
     }
     
     // 更新玩家回合顯示
@@ -191,11 +312,20 @@ function movePiece(from, to) {
     gameState.board[to.row][to.col] = movedPiece;
     gameState.board[from.row][from.col] = null;
     
-    // 兵升變（pawn promotion）
+// 兵升變（pawn promotion）
     if (movedPiece.type === 'pawn') {
-        if ((movedPiece.color === 'white' && to.row === 0) || 
-            (movedPiece.color === 'black' && to.row === 7)) {
-            gameState.board[to.row][to.col].type = 'queen';
+        if (gameState.gameMode === 'hexagonal') {
+            // 六角形模式：白方到達第9行，黑方到達第0行
+            if ((movedPiece.color === 'white' && to.row === 9) || 
+                (movedPiece.color === 'black' && to.row === 0)) {
+                gameState.board[to.row][to.col].type = 'queen';
+            }
+        } else {
+            // 標準模式
+            if ((movedPiece.color === 'white' && to.row === 0) || 
+                (movedPiece.color === 'black' && to.row === 7)) {
+                gameState.board[to.row][to.col].type = 'queen';
+            }
         }
     }
     
@@ -264,6 +394,11 @@ function getValidMoves(row, col) {
 // 兵的移動
 function getPawnMoves(row, col, color) {
     const moves = [];
+    
+    if (gameState.gameMode === 'hexagonal') {
+        return getHexagonalPawnMoves(row, col, color);
+    }
+    
     const direction = color === 'white' ? -1 : 1;
     const startRow = color === 'white' ? 6 : 1;
     
@@ -295,6 +430,44 @@ function getPawnMoves(row, col, color) {
     return moves;
 }
 
+// 六角形棋盤的兵移動
+function getHexagonalPawnMoves(row, col, color) {
+    const moves = [];
+    const direction = color === 'white' ? -1 : 1;
+    const startRow = color === 'white' ? 1 : 8;
+    
+    // 向前一步
+    const forward1 = { row: row + direction, col: col };
+    if (isValidSquare(forward1.row, forward1.col) && !gameState.board[forward1.row][forward1.col]) {
+        moves.push(forward1);
+        
+        // 初始位置可以走兩步
+        const forward2 = { row: row + 2 * direction, col: col };
+        if (row === startRow && isValidSquare(forward2.row, forward2.col) && !gameState.board[forward2.row][forward2.col]) {
+            moves.push(forward2);
+        }
+    }
+    
+    // 六角形網格中的斜向吃子（6個方向）
+    const diagonalOffsets = [
+        [-1, -1], [-1, 0], [-1, 1],
+        [1, -1],  [1, 0],  [1, 1]
+    ];
+    
+    diagonalOffsets.forEach(([dRow, dCol]) => {
+        const newRow = row + dRow;
+        const newCol = col + dCol;
+        if (isValidSquare(newRow, newCol)) {
+            const targetPiece = gameState.board[newRow][newCol];
+            if (targetPiece && targetPiece.color !== color) {
+                moves.push({ row: newRow, col: newCol });
+            }
+        }
+    });
+    
+    return moves;
+}
+
 // 城堡的移動
 function getRookMoves(row, col, color) {
     return getStraightMoves(row, col, color);
@@ -303,6 +476,11 @@ function getRookMoves(row, col, color) {
 // 騎士的移動
 function getKnightMoves(row, col, color) {
     const moves = [];
+    
+    if (gameState.gameMode === 'hexagonal') {
+        return getHexagonalKnightMoves(row, col, color);
+    }
+    
     const offsets = [
         [-2, -1], [-2, 1], [-1, -2], [-1, 2],
         [1, -2], [1, 2], [2, -1], [2, 1]
@@ -315,6 +493,32 @@ function getKnightMoves(row, col, color) {
             const effectiveColor = newPos.colorFlip ? (color === 'white' ? 'black' : 'white') : color;
             if (!targetPiece || targetPiece.color !== effectiveColor) {
                 moves.push(newPos);
+            }
+        }
+    });
+    
+    return moves;
+}
+
+// 六角形棋盤的騎士移動
+function getHexagonalKnightMoves(row, col, color) {
+    const moves = [];
+    // 在六角形網格中，騎士的移動模式需要重新定義
+    // 這裡使用簡化的L型移動，但適應六角形網格
+    const offsets = [
+        [-2, -1], [-2, 0], [-2, 1],
+        [-1, -2], [-1, 2],
+        [1, -2], [1, 2],
+        [2, -1], [2, 0], [2, 1]
+    ];
+    
+    offsets.forEach(([dRow, dCol]) => {
+        const newRow = row + dRow;
+        const newCol = col + dCol;
+        if (isValidSquare(newRow, newCol)) {
+            const targetPiece = gameState.board[newRow][newCol];
+            if (!targetPiece || targetPiece.color !== color) {
+                moves.push({ row: newRow, col: newCol });
             }
         }
     });
@@ -335,6 +539,11 @@ function getQueenMoves(row, col, color) {
 // 國王的移動
 function getKingMoves(row, col, color) {
     const moves = [];
+    
+    if (gameState.gameMode === 'hexagonal') {
+        return getHexagonalKingMoves(row, col, color);
+    }
+    
     const offsets = [
         [-1, -1], [-1, 0], [-1, 1],
         [0, -1],           [0, 1],
@@ -348,6 +557,30 @@ function getKingMoves(row, col, color) {
             const effectiveColor = newPos.colorFlip ? (color === 'white' ? 'black' : 'white') : color;
             if (!targetPiece || targetPiece.color !== effectiveColor) {
                 moves.push(newPos);
+            }
+        }
+    });
+    
+    return moves;
+}
+
+// 六角形棋盤的國王移動
+function getHexagonalKingMoves(row, col, color) {
+    const moves = [];
+    // 國王可以移動到相鄰的6個六角形格子
+    const offsets = [
+        [-1, -1], [-1, 0], [-1, 1],
+        [0, -1],           [0, 1],
+        [1, -1],  [1, 0],  [1, 1]
+    ];
+    
+    offsets.forEach(([dRow, dCol]) => {
+        const newRow = row + dRow;
+        const newCol = col + dCol;
+        if (isValidSquare(newRow, newCol)) {
+            const targetPiece = gameState.board[newRow][newCol];
+            if (!targetPiece || targetPiece.color !== color) {
+                moves.push({ row: newRow, col: newCol });
             }
         }
     });
@@ -430,6 +663,9 @@ function isValidSquare(row, col) {
     if (gameState.gameMode === 'standard') {
         return row >= 0 && row < 8 && col >= 0 && col < 8;
     }
+    if (gameState.gameMode === 'hexagonal') {
+        return row >= 0 && row < 10 && col >= 0 && col < HEX_ROWS[row];
+    }
     // 對於torus和klein模式，所有坐標都可以通過包裝處理
     return true;
 }
@@ -473,8 +709,11 @@ function flipPieceColor(piece) {
 function isInCheck(color) {
     // 找到國王位置
     let kingPos = null;
-    for (let row = 0; row < 8; row++) {
-        for (let col = 0; col < 8; col++) {
+    const maxRows = gameState.gameMode === 'hexagonal' ? 10 : 8;
+    
+    for (let row = 0; row < maxRows; row++) {
+        const maxCols = gameState.gameMode === 'hexagonal' ? HEX_ROWS[row] : 8;
+        for (let col = 0; col < maxCols; col++) {
             const piece = gameState.board[row][col];
             if (piece && piece.type === 'king' && piece.color === color) {
                 kingPos = { row, col };
@@ -488,8 +727,9 @@ function isInCheck(color) {
     
     // 檢查對方所有棋子是否能攻擊國王
     const opponentColor = color === 'white' ? 'black' : 'white';
-    for (let row = 0; row < 8; row++) {
-        for (let col = 0; col < 8; col++) {
+    for (let row = 0; row < maxRows; row++) {
+        const maxCols = gameState.gameMode === 'hexagonal' ? HEX_ROWS[row] : 8;
+        for (let col = 0; col < maxCols; col++) {
             const piece = gameState.board[row][col];
             if (piece && piece.color === opponentColor) {
                 const moves = getValidMovesWithoutCheckValidation(row, col);
@@ -554,8 +794,11 @@ function wouldBeInCheck(color, from, to) {
 
 // 檢查是否有合法移動
 function hasLegalMoves(color) {
-    for (let row = 0; row < 8; row++) {
-        for (let col = 0; col < 8; col++) {
+    const maxRows = gameState.gameMode === 'hexagonal' ? 10 : 8;
+    
+    for (let row = 0; row < maxRows; row++) {
+        const maxCols = gameState.gameMode === 'hexagonal' ? HEX_ROWS[row] : 8;
+        for (let col = 0; col < maxCols; col++) {
             const piece = gameState.board[row][col];
             if (piece && piece.color === color) {
                 const moves = getValidMoves(row, col);
