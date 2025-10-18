@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>國際象棋遊戲</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>國際象棋</h1>
+        <div class="game-mode-selector">
+            <label for="game-mode">遊戲模式：</label>
+            <select id="game-mode" class="mode-select">
+                <option value="standard">標準模式</option>
+                <option value="torus">環面模式 (Torus)</option>
+                <option value="klein">克萊因瓶模式 (Klein Bottle)</option>
+            </select>
+            <div class="mode-description" id="mode-description">
+                標準國際象棋規則，棋盤有邊界。
+            </div>
+        </div>
+        <div class="game-info">
+            <div class="player-turn">
+                <span id="turn-indicator">輪到：</span>
+                <span id="current-player">白方</span>
+            </div>
+            <div class="game-status" id="game-status"></div>
+        </div>
+        <div class="chessboard" id="chessboard"></div>
+        <div class="controls">
+            <button id="reset-btn" class="btn">重新開始</button>
+            <button id="undo-btn" class="btn">悔棋</button>
+        </div>
+        <div class="captured-pieces">
+            <div class="captured-white">
+                <h3>白方被吃棋子</h3>
+                <div id="captured-white"></div>
+            </div>
+            <div class="captured-black">
+                <h3>黑方被吃棋子</h3>
+                <div id="captured-black"></div>
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
+
