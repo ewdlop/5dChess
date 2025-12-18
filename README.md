@@ -1,9 +1,9 @@
 # 5dChess
 
-Euclidean 5d Chess 
+Euclidean 5d Chess(5 + 1) 
 - +++++
 
-- +++++ 
+- +++++ (Curved) 
 
 vs 
 Non-Euclidean(Curved) 5d Chess 
